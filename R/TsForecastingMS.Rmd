@@ -20,55 +20,63 @@ In this workshop we will go through some basic concepts of statistical forecasti
 # Load required libraries
 source("R/load_lib.R")
 
-using("data.table", "ggplot2", "forecast","MLmetrics","gridExtra","tseries","zoo")
+using("data.table", "ggplot2", "forecast","MLmetrics","gridExtra","tseries","zoo","lubridate")
 
 # Load data
-dseries = fread("../data/DailyDelhiClimateTrain.csv",sep = ",")
+dseries = fread("../data/TG_STAID000061.txt",sep = ",", skip = 20, header = T)
 
 # Access top 6 records
 head(dseries)
 
 # Convert to date format
-dseries[, date := as.Date(date, format = "%Y-%m-%d")]
+dseries[, DATE:= ymd(DATE)]
+
+# Get Records with High Quality
+dseries = dseries[year(DATE) > 1970 & year(DATE) < 2005]
+
+# Convert the temperature to the right scale
+dseries[, TG := 0.1*TG]
 
 # Plot mean temperature
-ggplot(data = dseries) + geom_line(aes(x = date, y = meantemp)) + xlab("Day") + ylab("Mean Temperature")
+ggplot(data = dseries) + geom_line(aes(x = DATE, y = TG)) + xlab("Day") + ylab("Mean Temperature")
 ```
 
 ```{r}
 # Create summary statistics of the mean temperature series
-dseries[, summary(meantemp)]
+dseries[, summary(TG)]
 ```
 
 ```{r}
 # Generate summary statistics by month
-dseries[, .(`Min Mean Temperature` = min(meantemp),
-            `Max Mean Temperature` = max(meantemp),
-            `SD Mean Temperature` = sd(meantemp)
-            ), by = month(date)]
+dseries[, .(`Min Mean Temperature` = min(TG),
+            `Max Mean Temperature` = max(TG),
+            `SD Mean Temperature` = sd(TG)
+            ), by = month(DATE)]
 ```
 
 ```{r fig2, fig.height = 5, fig.width = 8}
 # Create box plots for each month
-dseries[, month := month(date)]
 ggplot(data = dseries) +
-  geom_boxplot(aes(x = factor(month(date)), y = meantemp)) +
+  geom_boxplot(aes(x = factor(month(DATE)), y = TG)) +
   xlab("Month") +
   ylab("Mean Temperature")
 ```
 
 ```{r fig3, fig.height = 5, fig.width = 8}
 # Create box plots per year
-# dseries[, month := month(date)]
 ggplot(data = dseries) +
-  geom_boxplot(aes(x = factor(month(date)), y = meantemp)) +
+  geom_boxplot(aes(x = factor(year(DATE)), y = TG)) +
   xlab("Month") +
-  ylab("Mean Temperature") + facet_grid(~year(date))
+  ylab("Mean Temperature") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
-```{r}
-monthlySeries = copy(dseries[, .(MonthlyTemp = mean(meantemp)), by = .(Date = as.yearmon(date))])
-ggplot(data = monthlySeries) + geom_line(aes(x = Date, y = MonthlyTemp)) + xlab("Date") + ylab("Monthly Temperature")
+```{r fig4, fig.height = 5, fig.width = 8}
+monthlySeries = copy(dseries[, .(MonthlyTemp = mean(TG)), by = .(Date = as.yearmon(DATE))])
+ggplot(data = monthlySeries) +
+  geom_line(aes(x = Date, y = MonthlyTemp)) +
+  xlab("Date") +
+  ylab("Monthly Temperature")
 ```
 
 
@@ -121,18 +129,18 @@ $$ x_{t} = m_{t} \times s_{t} + z_{t} $$
 
 ### Classical decomposition
 
-```{r fig4, fig.height = 5, fig.width = 8}
+```{r 5, fig.height = 5, fig.width = 8}
 # Convert mean temperature to time series object
 tseries = ts(monthlySeries[, MonthlyTemp],frequency = 12, start = monthlySeries[,min(MonthlyTemp)])
 
-# Perform classical addive time series decomposition
+# Perform classical additive time series decomposition
 autoplot(decompose(tseries, type = "additive")) +xlab("Date")
 ```
 
 
 ### LOESS Time Series Decomposition
 
-```{r fig5, fig.height = 5, fig.width = 8}
+```{r fig6, fig.height = 5, fig.width = 8}
 autoplot(stl(tseries,s.window="periodic", robust=TRUE)) +xlab("Date") + ggtitle("STL Decomposition") + xlab("Date")
 ```
 
@@ -142,11 +150,11 @@ autoplot(stl(tseries,s.window="periodic", robust=TRUE)) +xlab("Date") + ggtitle(
 1.  It shows whether the lagged values of the time series influence the current step
 2.  It provides information around the stationarity of the time series. A non-stationary time series has autocorrelation lags that fall to zero very quickly.
 
-It is clear from the autocorrelation plot that the lags of the mean temperature are statistically significant, therefore they lead to the conclusion that the mean temperature series are highly correlated**.**
+It is clear from the autocorrelation plot that the lags of the mean temperature are statistically significant, therefore they lead to the conclusion that the mean temperature series are highly correlated.
 
 **Partial autocorrelation**: Is the correlation between the correlation of the time series with prior time steps with the relationships of the intervening observations removed.
 
-```{r fig6, fig.height = 6, fig.width = 8}
+```{r fig7, fig.height = 6, fig.width = 8}
 # Check autocorrelation in time series
 gridExtra::grid.arrange(
   ggAcf(tseries) + ggtitle("Autocorrelation plot"),
@@ -158,15 +166,17 @@ In this graph we can see that the strongest positive correlation comes at lag 12
 
 ## Forecasting and Model Selection (Statistical Approach)
 
+In this section, we go through the 
+
 We split the time series data into training and test. The training set is used to train the model using a set of hyper-parameters and the test set is used to validate the performance of the selected hyper-parameters test set.
 
 ![](images/split.png)
 
-The training set will be used primarily to understand the time series and their characteristics. We don't want to learn the characteristics of the time series in the validation and test sets as this will violate the learning process and will induce information leakage in the training set.
+The training set will be used primarily to understand the time series and their characteristics. We don't want to learn the characteristics of the time series in the test set as this will violate the learning process and will induce information leakage in the training set.
 
-When limited data is available, which is quite common in time series forecasting applications, multiple models are fitted in the training set, the best model is selected using the AIC or the BIC criterion and the best model is evaluated in the test set. I
+When limited data is available, which is quite common in time series forecasting applications, multiple models are fitted in the training set, the best model is selected using the AIC or the BIC criterion and the best model is evaluated in the test set.
 
-```{r fig7, fig.height = 5, fig.width = 8}
+```{r fig8, fig.height = 5, fig.width = 8}
 # Obtain the training set only
 train_ratio = 0.8
 test_ratio  = 0.2
@@ -193,19 +203,19 @@ Before fitting forecasting models, it is critical to check the stationarity of t
 kpss.test(x = tseries)
 ```
 
-According to the results of the \`KPSS\` test, we fail to reject the null hypothesis and therefore the series is not stationary.
+According to the results of the \`KPSS\` test, we fail to reject the null hypothesis (series is stationary) and therefore the series is stationary.
 
 #### ADF-Test:
 
-```{r fig8, fig.height = 3, fig.width = 8}
+```{r fig9, fig.height = 3, fig.width = 8}
 # Perfroming adf test
 adf.test(x = tseries)
 ```
 
-According to the results of the ADF test, we reject the null hypothesis and therefore the series is not stationary.
+According to the results of the ADF test, we reject the null hypothesis (series is non stationary) and therefore the series is stationary.
 
 
-```{r fig9, fig.height = 4, fig.width = 8}
+```{r fig10, fig.height = 4, fig.width = 8}
 # Check autocorrelation in time series
 gridExtra::grid.arrange(
   ggAcf(tseries, lag.max = 36) + ggtitle("Autocorrelation plot"),
@@ -213,15 +223,34 @@ gridExtra::grid.arrange(
 )
 ```
 
-```{r fig10, fig.height = 4, fig.width = 8}
+```{r fig11, fig.height = 4, fig.width = 8}
 # Check autocorrelation in time series
 ggtsdisplay(diff(tseries, lag = 12))
 
 ```
 
-```{r fig11,  fig.height = 4, fig.width = 8}
+### Quick Introduction to ARIMA
+
+An ARIMA model a class of statistical models for analyzing and forecasting time series data. ARIMA is an acronym that stands for Autoregressive Integrated Moving Average. 
+
+* **AR**: Uses the relationship between an observation and some number of lagged observations
+* **I**: It relates to differencing observations by subtracting an observation by an observation in the previous step
+* **MA**: Uses the dependency between an observation and residual errors from a moving average applied to lagged observations. 
+
+A standard notion is used of ARIMA(p,d,q) where the parameters are substituted by integer values to quickly specify the type of ARIMA model being used.
+
+The parameters of the ARIMA model are defined as follows:
+
+* **p**: the number of lag observations
+* **d**: the degree of differencing
+* **q**: the size of the moving average window
+
+### Forecasting Mean Monthly Temperature using ARIMA
+
+```{r fig12,  fig.height = 4, fig.width = 8}
 # Fit an auto arima in the training set
-model = auto.arima(y = tseries, d = 1, max.p = 4, max.q = 4, seasonal = T, max.P = 1, max.Q = 0, D = 1)
+# Since the time series is stationary, the differencing factor will be set to 0
+model = auto.arima(y = tseries, d = 0, max.p = 8, max.q = 6, seasonal = T, max.P = 6, max.Q = 6, D = 1, allowdrift=F, ic="bic", trace = FALSE)
 summary(model)
 
 # Obtain fitted values
@@ -236,14 +265,25 @@ ggplot(data = train_performance) +
   geom_line(aes(x = Date, y = MonthlyTemp)) +
   geom_line(aes(x = Date, y = Predicted), color = "red", linetype = "dashed") +
   ggtitle("Actual versus Predicted Mean Temperature","Training set")
+
 ```
 
-```{r fig12, fig.height = 4, fig.width = 8}
-# Check the model residuals
-ggtsdisplay(model$residuals)
+#### Model diagnostic checking
+
+```{r, fig.height = 4, fig.width = 8}
+checkresiduals(model)
 ```
 
-```{r fig13, fig.height = 4, fig.width = 8}
+
+```{r}
+# Perform Box-Pierce and Ljung-Box Tests
+Box.test(model$residuals,lag=10, fitdf=0, type="Lj")
+```
+
+
+#### Evaluate model performance in the test set
+
+```{r fig14, fig.height = 4, fig.width = 8}
 # Perform walk forward validation in the validation set
 stepsAhead = 1
 monthlySeries[, id := 1:.N]
@@ -262,7 +302,10 @@ for (i in startingPoint:endPoint){
                                )
                        ]
   
+  # Update the model with the most updated data
   updatedModel = Arima(dseriesupd, model = model)
+  
+  # Store model predictions
   pred_valid = c(pred_valid,predict(updatedModel, n.ahead = stepsAhead)[["pred"]][[1]])
 }
 
@@ -276,119 +319,3 @@ ggplot(data = valid_performance) +
   geom_line(aes(x = Date, y = Predicted), color = "red", linetype = "dashed") +
   ggtitle("Actual versus Predicted Mean Temperature","Validation set")
 ```
-
-## Holt Winters
-
-....
-
-## Autoregressive Integrated Moving Average
-
-In this section, we introduce a special family of the stochastic linear models, the Autoregressive Integrated Moving Average (ARIMA).
-
-
-#### A Machine Learning approach to train validate and test the ARIMA model
-
-We split the time series data into training, validation and test. The training set is used to train the model using a set of hyper-parameters, the validation set is used to validate the performance of the selected hyper-parameters in the validation set and the test set is used to test the generalization capability of the model using unseen data.
-
-![](images/split-01.png)
-
-```{r}
-# Function to split the dataset into training validation and test set
-# train_valid_test_split <- function(x, trainSplit, validSplit, testSplit){
-# 
-#   status <- rep(as.character(NA), times = length(x))
-#   trainSize <- round(trainSplit * length(x))
-#   validSize <- round(validSplit * length(x))
-#   testSize  <- round(testSplit * length(x))
-#   
-#   status[1:trainSize]                            <- "Train"
-#   status[(trainSize+1):(trainSize+validSize)]    <- "Validation"
-#   status[(trainSize+validSize+1):length(status)] <- "Test"
-#   
-#   return(status)
-# }
-# 
-# # Split the dataset into training (0.6), validation (0.2) and test (0.2) 
-# dseries[, Split := train_valid_test_split(date, 0.6, 0.2, 0.2)]
-```
-
-```{r fig 14,  fig.height = 4, fig.width = 8}
-# Convert to time series object
-# tseries = ts(dseries[Split == "Train",meantemp], start  = train_data[,min(date)], frequency = 12)
-
-# Fit an auto arima in the training set
-# model = auto.arima(y = tseries, d = 0, max.p = 6, max.q = 6)
-# summary(model)
-
-# Obtain fitted values
-# pred_train = model$fitted
-# 
-# # Obtain the mean temperature values in the training + the model predicted values in the training set
-# train_performance = copy(dseries[Split == "Train", .(date, meantemp)])
-# train_performance[, Predicted := pred_train]
-# 
-# # Plot actual versus predicted series in the training set
-# ggplot(data = train_performance) +
-#   geom_line(aes(x = date, y = meantemp)) +
-#   geom_line(aes(x = date, y = Predicted), color = "red", linetype = "dashed") +
-# ggtitle("Actual versus Predicted Mean Temperature","Training set")
-```
-
-```{r}
-# Model performance in the training set
-# train_performance[, .(MAPE = MLmetrics::MAPE(y_pred = meantemp, y_true = Predicted),
-#                     R2 = MLmetrics::R2_Score(y_pred = meantemp, y_true = Predicted),
-#                   RMSE = MLmetrics::RMSE(y_pred = meantemp, y_true = Predicted)
-# )
-                  # ]
-```
-
-#### Model Validation
-
-In this step we perform model validation in the validation set. At each step we update the model and predict the next step.
-
-```{r}
-# Perform walk forward validation in the validation set
-# stepsAhead = 1
-# dseries[, id := 1:.N]
-# 
-# # Define the start/ end point of walk forward validation
-# startingPoint = dseries[Split == "Validation", min(id)-stepsAhead]
-# endPoint = dseries[Split == "Validation", max(id)-stepsAhead]
-# 
-# # Loop over each time step
-# pred_valid = c()
-# for (i in startingPoint:endPoint){
-#   # Get time series object
-#   dseriesupd = dseries[1:i, ts(data = meantemp,
-#                                start = min(date),  
-#                                frequency = 12
-#                                )
-#                        ]
-#   
-#   updatedModel = Arima(dseriesupd, model = model)
-#   pred_valid = c(pred_valid,predict(updatedModel, n.ahead = stepsAhead)[["pred"]][[1]])
-# }
-# 
-# # Obtain the mean temperature values in the training + the model predicted values in the training set
-# valid_performance = copy(dseries[Split == "Validation", .(date, meantemp)])
-# valid_performance[, Predicted := pred_valid]
-# 
-# # Plot actual versus predicted series in the training set
-# ggplot(data = valid_performance) +
-#   geom_line(aes(x = date, y = meantemp)) +
-#   geom_line(aes(x = date, y = Predicted), color = "red", linetype = "dashed") +
-#   ggtitle("Actual versus Predicted Mean Temperature","Validation set")
-```
-
-```{r}
-# valid_performance[, .(MAPE = MLmetrics::MAPE(y_pred = meantemp, y_true = Predicted),
-#                     R2 = MLmetrics::R2_Score(y_pred = meantemp, y_true = Predicted),
-#                   RMSE = MLmetrics::RMSE(y_pred = meantemp, y_true = Predicted)
-# )
-#                   ]
-```
-
-
-
-#### A multivariate approach to time series forecasting using wavelet
