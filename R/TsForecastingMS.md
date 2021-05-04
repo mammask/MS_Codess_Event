@@ -518,7 +518,7 @@ valid_performance[, Predicted := pred_valid]
 ggplot(data = valid_performance) +
   geom_line(aes(x = Date, y = MonthlyTemp)) +
   geom_line(aes(x = Date, y = Predicted), color = "red", linetype = "dashed") +
-  ggtitle("Actual versus Predicted Mean Temperature","Validation set")
+  ggtitle("Actual versus Predicted Mean Temperature","Test set")
 ```
 
 <img src="TsForecastingMS_files/figure-gfm/fig14-1.png" style="display: block; margin: auto;" />
