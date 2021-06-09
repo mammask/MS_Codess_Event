@@ -212,7 +212,7 @@ between two points on the same series observed at different times.
 
 ## Differencing
 
-One way of conrting non stationary time series stationary, is by
+One way of converting non stationary time series stationary, is by
 differencing. This requires computing the differences between
 consecutive observations.
 
